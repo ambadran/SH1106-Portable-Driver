@@ -1,5 +1,7 @@
-#ifndef SSH1106_H 
-#define SSH1106_H
+#ifndef __SS_OLED_H__
+#define __SS_OLED_H__
+
+#include <BitBang_I2C.h>
 
 typedef struct ssoleds
 {
@@ -11,6 +13,13 @@ uint8_t oled_x, oled_y;
 int iScreenOffset;
 BBI2C bbi2c;
 } SSOLED;
+// Make the Linux library interface C instead of C++
+#if defined(_LINUX_) && defined(__cplusplus)
+extern "C" {
+#endif
+
+// These are defined the same in my SPI_LCD library
+#ifndef SPI_LCD_H
 
 // 4 possible font sizes: 8x8, 16x32, 6x8, 16x16 (stretched from 8x8)
 enum {
@@ -32,6 +41,7 @@ enum {
 #define FONT_SMALL FONT_6x8
 #define FONT_LARGE FONT_16x32
 #define FONT_STRETCHED FONT_16x16
+#endif
 
 // OLED type for init function
 enum {
@@ -64,13 +74,6 @@ enum {
   OLED_SH1107_3C,  // SH1107
   OLED_SH1107_3D
 };
-
-/*
- * I2C communication to send one character
- */
-static void oledWriteCommand(SSOLED *pOLED, unsigned char c);
-static void oledWriteCommand2(SSOLED *pOLED, unsigned char c, unsigned char d);
-
 //
 // Initializes the OLED controller into "page mode" on I2C
 // If SDAPin and SCLPin are not -1, then bit bang I2C on those pins
@@ -78,6 +81,10 @@ static void oledWriteCommand2(SSOLED *pOLED, unsigned char c, unsigned char d);
 // If you don't need to use a separate reset pin, set it to -1
 //
 int oledInit(SSOLED *pOLED, int iType, int iAddr, int bFlip, int bInvert, int bWire, int iSDAPin, int iSCLPin, int iResetPin, int32_t iSpeed);
+//
+// Initialize an SPI version of the display
+//
+void oledSPIInit(int iType, int iDC, int iCS, int iReset, int bFlip, int bInvert, int32_t iSpeed);
 
 //
 // Provide or revoke a back buffer for your OLED graphics
@@ -211,10 +218,9 @@ void oledEllipse(SSOLED *pOLED, int iCenterX, int iCenterY, int32_t iRadiusX, in
 //
 void oledRectangle(SSOLED *pOLED, int x1, int y1, int x2, int y2, uint8_t ucColor, uint8_t bFilled);
 
+#if defined(_LINUX_) && defined(__cplusplus)
+}
+#endif // _LINUX_
 
-/*
- * Miscillaneous functions
- */
-void InvertBytes(uint8_t *pData, uint8_t bLen);
+#endif // __SS_OLED_H__
 
-#endif
