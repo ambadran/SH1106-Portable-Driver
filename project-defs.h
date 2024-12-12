@@ -9,11 +9,13 @@
 #include <STC/8H8KxxU/SKDIP28.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <delay.h>
 #include <uart-hal.h>
 #include <serial-console.h>
 #include <gpio-hal.h>
 #include <i2c-hal.h>
-#include "sh1106.h"
+#include "font.h"
+#include "oled.h"
 
 #endif

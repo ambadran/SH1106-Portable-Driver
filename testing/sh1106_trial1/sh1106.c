@@ -566,31 +566,129 @@ static int iCSPin, iDCPin, iResetPin;
 #define MAX_CACHE 32
 //static byte bCache[MAX_CACHE] = {0x40}; // for faster character drawing
 //static byte bEnd = 1;
-
+static void oledWriteCommand(SSOLED *pOLED, unsigned char c);
+void InvertBytes(uint8_t *pData, uint8_t bLen);
 
 /*
- * I2C Communication functions
- *
- *
+ * Redefining I2C communication according to my STC Drivers
  */
-// Send a single byte command to the OLED controller
-static void oledWriteCommand(SSOLED *pOLED, unsigned char c)
+static void _I2CWrite(SSOLED *pOLED, unsigned char *pData, int iLen) {
+  /* I2CWrite(&pOLED->bbi2c, pOLED->oled_addr, pData, iLen); */
+
+  i2cStartCommand(pOLED->oled_addr, I2C_WRITE);
+  for(int i=0;i++;i<iLen) {
+    i2cSendByte(pData[i]);
+  }
+  i2cStop();
+
+} 
+
+/
+// Initializes the OLED controller into "page mode"
+//
+int oledInit(SSOLED *pOLED, int iType, int iAddr, int bFlip, int bInvert, int bWire, int sda, int scl, int reset, int32_t iSpeed)
 {
-unsigned char buf[2];
+unsigned char uc[4];
+int rc = OLED_NOT_FOUND;
 
-  buf[0] = 0x00; // command introducer
-  buf[1] = c;
-  _I2CWrite(pOLED, buf, 2);
-} /* oledWriteCommand() */
+  pOLED->ucScreen = NULL; // reset backbuffer; user must provide one later
+  pOLED->oled_type = iType;
+  pOLED->oled_flip = bFlip;
+  pOLED->oled_wrap = 0; // default - disable text wrap
+  pOLED->bbi2c.bWire = bWire;
+  pOLED->bbi2c.iSDA = sda;
+  pOLED->bbi2c.iSCL = scl;
+  iResetPin = reset;
+// Disable SPI mode code
+  iCSPin = iDCPin = -1;
 
-static void oledWriteCommand2(SSOLED *pOLED, unsigned char c, unsigned char d)
-{
-unsigned char buf[3];
+  I2CInit(&pOLED->bbi2c, iSpeed); // on Linux, SDA = bus number, SCL = device address
+  
+  // find the device address if requested
+  if (iAddr == -1 || iAddr == 0 || iAddr == 0xff) {
+    //TODO: re implement for STC
+    /* I2CTest(&pOLED->bbi2c, 0x3c); */
+    /* if (I2CTest(&pOLED->bbi2c, 0x3c)) */
+    /*    pOLED->oled_addr = 0x3c; */
+    /* else if (I2CTest(&pOLED->bbi2c, 0x3d)) */
+    /*    pOLED->oled_addr = 0x3d; */
+    /* else */
+    /*    return rc; // no display found! */
+  }
+  else
+  {
+    pOLED->oled_addr = iAddr;
+    //TODO: re implement for STC
+    /* I2CTest(&pOLED->bbi2c, iAddr); */
+    /* if (!I2CTest(&pOLED->bbi2c, iAddr)) */
+    /*    return rc; // no display found */
+  }
 
-  buf[0] = 0x00;
-  buf[1] = c;
-  buf[2] = d;
-  _I2CWrite(pOLED, buf, 3);
-} /* oledWriteCommand2() */
+  // Detect the display controller (SSD1306, SH1107 or SH1106)
+  uint8_t u = 0;
+  I2CReadRegister(&pOLED->bbi2c, pOLED->oled_addr, 0x00, &u, 1); // read the status register
+  u &= 0x0f; // mask off power on/off bit
+  if (u == 0x7 || u == 0xf) // SH1107
+  {
+    pOLED->oled_type = OLED_128x128;
+    rc = OLED_SH1107_3C;
+    bFlip = !bFlip; // SH1107 seems to have this reversed from the usual direction
+  }
+  else if (u == 0x8) // SH1106
+  {
+    rc = OLED_SH1106_3C;
+    pOLED->oled_type = OLED_132x64; // needs to be treated a little differently
+  }
+  else if (u == 3 || u == 6) // 6=128x64 display, 3=smaller
+  {
+    rc = OLED_SSD1306_3C;
+  }
+  if (pOLED->oled_addr == 0x3d)
+     rc++; // return the '3D' version of the type
 
+  if (iType == OLED_128x32 || iType == OLED_96x16)
+     _I2CWrite(pOLED,(unsigned char *)oled32_initbuf, sizeof(oled32_initbuf));
+  else if (iType == OLED_128x128)
+     _I2CWrite(pOLED,(unsigned char *)oled128_initbuf, sizeof(oled128_initbuf));
+  else if (iType == OLED_72x40)
+     _I2CWrite(pOLED,(unsigned char *)oled72_initbuf, sizeof(oled72_initbuf));
+  else // 132x64, 128x64 and 64x32
+     _I2CWrite(pOLED,(unsigned char *)oled64_initbuf, sizeof(oled64_initbuf));
+  if (bInvert)
+  {
+    uc[0] = 0; // command
+    uc[1] = 0xa7; // invert command
+    _I2CWrite(pOLED,uc, 2);
+  }
+  if (bFlip) // rotate display 180
+  {
+    uc[0] = 0; // command
+    uc[1] = 0xa0;
+    _I2CWrite(pOLED,uc, 2);
+    uc[1] = 0xc0;
+    _I2CWrite(pOLED,uc, 2);
+  }
+  pOLED->oled_x = 128; // assume 128x64
+  pOLED->oled_y = 64;
+  if (iType == OLED_96x16)
+  {
+    pOLED->oled_x = 96;
+    pOLED->oled_y = 16;
+  }
+  else if (iType == OLED_128x32)
+    pOLED->oled_y = 32;
+  else if (iType == OLED_128x128)
+    pOLED->oled_y = 128;
+  else if (iType == OLED_64x32)
+  {
+    pOLED->oled_x = 64;
+    pOLED->oled_y = 32;
+  }
+  else if (iType == OLED_72x40)
+  {
+    pOLED->oled_x = 72;
+    pOLED->oled_y = 40;
+  }
+  return rc;
+} /* oledInit() */
 
